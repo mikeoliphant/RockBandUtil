@@ -1,0 +1,3 @@
+[submodule "Dependencies/OpenSongChart"]
+	path = Dependencies/OpenSongChart
+	url = https://github.com/mikeoliphant/OpenSongChart
