@@ -1,7 +1,11 @@
 ﻿using NAudio.Midi;
+using NAudio.Wave;
 using SongFormat;
 using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace RockBandConverter
 {
@@ -123,41 +127,74 @@ namespace RockBandConverter
             List<(long Tick, int Tempo)> tempoMap = new List<(long Tick, int Tempo)>();
             bool haveTempoMap = false;
 
+            SongStructure songStructure = new SongStructure();
             SongKeyboardNotes keyboardNotes = new SongKeyboardNotes();
+            List<SongVocal> vocals = new List<SongVocal>();
+            SongSection lastSection = null;
 
             foreach (var track in midiFile.Events)
             {
+                Dictionary<int, long> noteDict = new Dictionary<int, long>();
+
+                bool isKeys = false;
+                bool isVocals = false;
+                bool isEvents = false;
+                bool isBeats = false;
+
+                bool tempoMapEnded = false;
+
+                int currentMicrosecondsPerQuarterNote = 0;
+                long currentMicrosecond = 0;
+                long currentTick = 0;
+
                 var tempoEnumerator = tempoMap.GetEnumerator();
 
                 if (tempoMap.Count > 0)
                     haveTempoMap = true;
 
-                Dictionary<int, long> noteDict = new Dictionary<int, long>();
-
-                bool isKeys = false;
-
-                long endTick = 0;
-                int currentMicrosecondsPerQuarterNote = 0;
-                long currentMicrosecond = 0;
+                if (haveTempoMap)
+                {
+                    tempoEnumerator.MoveNext();
+                    currentMicrosecondsPerQuarterNote = tempoEnumerator.Current.Tempo;
+                }
 
                 foreach (MidiEvent midiEvent in track)
                 {
                     if (haveTempoMap)
                     {
-                        while (tempoEnumerator.Current.Tick <= midiEvent.AbsoluteTime)
+                        long ticksLeft = midiEvent.DeltaTime;
+
+                        while (ticksLeft > 0)
                         {
-                            currentMicrosecondsPerQuarterNote = tempoEnumerator.Current.Tempo;
+                            if (!tempoMapEnded && tempoEnumerator.Current.Tick < (currentTick + ticksLeft))
+                            {
+                                // We're out of ticks at our current tempo, so do a delta and update the tempo
+                                long delta = tempoEnumerator.Current.Tick - currentTick;
 
-                            if (!tempoEnumerator.MoveNext())
-                                break;
+                                currentMicrosecond += ((long)delta * (long)currentMicrosecondsPerQuarterNote) / (long)ticksPerBeat;
+
+                                currentTick += delta;
+                                ticksLeft -= delta;
+
+                                currentMicrosecondsPerQuarterNote = tempoEnumerator.Current.Tempo;
+
+                                if (!tempoEnumerator.MoveNext())
+                                {
+                                    tempoMapEnded = true;
+                                }
+
+                                continue;
+                            }
+                            else
+                            {
+                                // The current event fits without updating tempo
+                                currentMicrosecond += ((long)ticksLeft * (long)currentMicrosecondsPerQuarterNote) / (long)ticksPerBeat;
+
+                                currentTick += ticksLeft;
+                                ticksLeft = 0;
+                            }
                         }
-
-                        currentMicrosecond += ((long)midiEvent.DeltaTime * (long)currentMicrosecondsPerQuarterNote) / (long)ticksPerBeat;
                     }
-
-                    endTick = (int)Math.Max(endTick, midiEvent.AbsoluteTime);
-
-                    int offset = midiEvent.DeltaTime;
 
                     if (midiEvent is MetaEvent)
                     {
@@ -174,9 +211,17 @@ namespace RockBandConverter
                             }
                             else if (lower.EndsWith("beat"))
                             {
+                                isBeats = true;
                             }
                             else if (lower.EndsWith("vocals"))
                             {
+                                isVocals = true;
+
+                                songData.InstrumentParts.Add(new SongInstrumentPart
+                                {
+                                    InstrumentName = "vocals",
+                                    InstrumentType = ESongInstrumentType.Vocals
+                                });
                             }
                             //else if (lower.Contains("harm"))
                             //{
@@ -199,6 +244,7 @@ namespace RockBandConverter
                             }
                             else if (lower.EndsWith("events"))
                             {
+                                isEvents = true;
                             }
                         }
                         else if (metaEvent.MetaEventType == MetaEventType.SetTempo)
@@ -206,6 +252,55 @@ namespace RockBandConverter
                             TempoEvent tempoEvent = metaEvent as TempoEvent;
 
                             tempoMap.Add((tempoEvent.AbsoluteTime, tempoEvent.MicrosecondsPerQuarterNote));
+                        }
+                        else if (midiEvent is TextEvent)
+                        {
+                            if (isEvents)
+                            {
+                                TextEvent textEvent = midiEvent as TextEvent;
+
+                                string lower = textEvent.Text.ToLower();
+
+                                Match match = Regex.Match(lower, @"\[section (\w+)\]");
+
+                                if (match.Success)
+                                {
+                                    Capture c = match.Groups[1].Captures[0];
+
+                                    float time = (float)((double)currentMicrosecond / 1000000.0);
+
+                                    if (lastSection != null)
+                                        lastSection.EndTime = time;
+
+                                    songStructure.Sections.Add(new SongSection()
+                                    {
+                                        Name = c.Value,
+                                        StartTime = time
+                                    });
+                                }
+                            }
+                            else if (isVocals)
+                            {
+                                string text = (midiEvent as TextEvent).Text;
+
+                                if ((text == "+") || text.StartsWith("["))
+                                {
+
+                                }
+                                else
+                                {
+                                    if (text.EndsWith("#") || text.EndsWith("^") || text.EndsWith("="))
+                                    {
+                                        text = text.Substring(0, text.Length - 1);
+                                    }
+
+                                    vocals.Add(new SongVocal()
+                                    {
+                                        TimeOffset = (float)((double)currentMicrosecond / 1000000.0),
+                                        Vocal = text
+                                    });
+                                }
+                            }
                         }
                     }
                     else if (midiEvent is NoteEvent)
@@ -232,9 +327,12 @@ namespace RockBandConverter
                                 {
                                     long start = noteDict[noteEvent.NoteNumber];
 
+                                    int ticks = (int)(((currentMicrosecond - start) * 960) / currentMicrosecondsPerQuarterNote);
+
                                     SongKeyboardNote note = new SongKeyboardNote()
                                     {
                                         TimeOffset = (float)((double)start / 1000000.0),
+                                        //TimeLength =  (ticks > 240) ? (float)((double)(currentMicrosecond - start) / 1000000.0) : 0,
                                         TimeLength = (float)((double)(currentMicrosecond - start) / 1000000.0),
                                         Note = noteEvent.NoteNumber,
                                         Velocity = noteEvent.Velocity
@@ -246,6 +344,21 @@ namespace RockBandConverter
                                 noteDict.Remove(noteEvent.NoteNumber);
                             }
                         }
+                        else if (isBeats)
+                        {
+                            if (noteEvent.CommandCode == MidiCommandCode.NoteOn)
+                            {
+                                // 12 is downbeat, 13 is other beat
+                                if ((noteEvent.NoteNumber == 12) || (noteEvent.NoteNumber == 13))
+                                {
+                                    songStructure.Beats.Add(new SongBeat()
+                                    {
+                                        TimeOffset = (float)((double)currentMicrosecond / 1000000.0),
+                                        IsMeasure = (noteEvent.NoteNumber == 12)
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -255,6 +368,39 @@ namespace RockBandConverter
                     {
                         JsonSerializer.Serialize(stream, keyboardNotes, SerializationUtil.CondensedSerializerOptions);
                     }
+                }
+                else if (isVocals)
+                {
+                    if (vocals.Count > 0)
+                    {
+                        using (FileStream stream = File.Create(Path.Combine(songDir, "vocals.json")))
+                        {
+                            JsonSerializer.Serialize(stream, vocals, SerializationUtil.CondensedSerializerOptions);
+                        }
+                    }
+                }
+                else if (isEvents)
+                {
+                    if (lastSection != null)
+                        lastSection.EndTime = (float)((double)currentMicrosecond / 1000000.0);
+                }
+            }
+
+            using (FileStream stream = File.Create(Path.Combine(songDir, "song.json")))
+            {
+                JsonSerializer.Serialize(stream, songData, SerializationUtil.IndentedSerializerOptions);
+            }
+
+            using (FileStream stream = File.Create(Path.Combine(songDir, "arrangement.json")))
+            {
+                JsonSerializer.Serialize(stream, songStructure, SerializationUtil.CondensedSerializerOptions);
+            }
+
+            if (convertAudio)
+            {
+                foreach (string oggFile in Directory.GetFiles(songFolder, "*.ogg"))
+                {
+                    File.Copy(oggFile, Path.Combine(songDir, Path.GetFileName(oggFile)), overwrite: true);
                 }
             }
         }
