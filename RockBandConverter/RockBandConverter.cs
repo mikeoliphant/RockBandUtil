@@ -174,6 +174,8 @@ namespace RockBandConverter
             Dictionary<int, int> noteHash = new Dictionary<int, int>();
             List<SongDrumNote> noteEvents = new List<SongDrumNote>();
 
+            int charsInLine = 0;
+
             foreach (var track in midiFile.Events)
             {
                 Dictionary<int, long> noteDict = new Dictionary<int, long>();
@@ -259,7 +261,9 @@ namespace RockBandConverter
                                 songData.AddOrReplacePart(new SongInstrumentPart
                                 {
                                     InstrumentName = "drums",
-                                    InstrumentType = ESongInstrumentType.Vocals
+                                    InstrumentType = ESongInstrumentType.Drums,
+                                    SongAudio = songFolder,
+                                    ArrangementName = "rbarrangement"
                                 });
                             }
                             else if (lower.EndsWith("beat"))
@@ -273,7 +277,9 @@ namespace RockBandConverter
                                 songData.AddOrReplacePart(new SongInstrumentPart
                                 {
                                     InstrumentName = "rbvocals",
-                                    InstrumentType = ESongInstrumentType.Vocals
+                                    InstrumentType = ESongInstrumentType.Vocals,
+                                    SongAudio = songFolder,
+                                    ArrangementName = "rbarrangement"
                                 });
                             }
                             //else if (lower.Contains("harm"))
@@ -292,7 +298,9 @@ namespace RockBandConverter
                                 songData.AddOrReplacePart(new SongInstrumentPart
                                 {
                                     InstrumentName = "keys",
-                                    InstrumentType = ESongInstrumentType.Keys
+                                    InstrumentType = ESongInstrumentType.Keys,
+                                    SongAudio = songFolder,
+                                    ArrangementName = "rbarrangement"
                                 });
                             }
                             else if (lower.EndsWith("events"))
@@ -361,6 +369,20 @@ namespace RockBandConverter
                                     {
                                         text = text.Substring(0, text.Length - 1);
                                     }
+
+                                    if ((char.IsAsciiLetterUpper(text[0]) && charsInLine > 20) || (charsInLine > 35))
+                                    {
+                                        var last = vocals[vocals.Count - 1];
+                                        vocals[vocals.Count - 1] = new SongVocal()
+                                        {
+                                            TimeOffset = last.TimeOffset,
+                                            Vocal = last.Vocal + "\n"
+                                        };
+
+                                        charsInLine = 0;
+                                    }
+
+                                    charsInLine += text.Length;
 
                                     vocals.Add(new SongVocal()
                                     {
@@ -713,24 +735,22 @@ namespace RockBandConverter
                                     doChoke = true;
                                 }
 
-                                noteEvents.Add(new SongDrumNote()
+                                if (val)
                                 {
-                                    TimeOffset = (float)((double)currentMicrosecond / 1000000.0),
-                                    KitPiece = kitPiece,
-                                    Articulation = articulation
-                                });
+                                    float offset = 0;
+
+                                    noteEvents.Add(new SongDrumNote()
+                                    {
+                                        TimeOffset = (float)((double)currentMicrosecond / 1000000.0),
+                                        KitPiece = kitPiece,
+                                        Articulation = articulation
+                                    });
+                                }
                             }
                         }
 
                         if (noteEvents.Count > 0)
                         {
-                            // Sort to get kick on bottom
-                            noteEvents.Sort((a, b) =>
-                                (a.KitPiece == EDrumKitPiece.Kick) ? -1 :
-                                (b.KitPiece == EDrumKitPiece.Kick) ? 1 :
-                                a.KitPiece.CompareTo(b.KitPiece)
-                            );
-
                             drumNotes.Notes.AddRange(noteEvents);
 
                             noteEvents.Clear();
@@ -765,7 +785,7 @@ namespace RockBandConverter
                 
                 if (isDrums)
                 {
-                    drumNotes.Notes.Sort((a, b) => (a.TimeOffset.CompareTo(b.TimeOffset)));
+                    drumNotes.Notes.Sort((a, b) => ((a.TimeOffset == b.TimeOffset) ? (a.KitPiece.CompareTo(b.KitPiece)) : a.TimeOffset.CompareTo(b.TimeOffset)));
 
                     using (FileStream stream = File.Create(Path.Combine(songDir, "drums.json")))
                     {
@@ -796,12 +816,19 @@ namespace RockBandConverter
                 }
             }
 
+            string albumPath = Path.Combine(songDir, "albumart.png");
+
+            if (!File.Exists(albumPath))
+            {
+                File.Copy(Path.Combine(songFolder, "album.png"), albumPath);
+            }
+
             using (FileStream stream = File.Create(Path.Combine(songDir, "song.json")))
             {
                 JsonSerializer.Serialize(stream, songData, SerializationUtil.IndentedSerializerOptions);
             }
 
-            using (FileStream stream = File.Create(Path.Combine(songDir, "arrangement.json")))
+            using (FileStream stream = File.Create(Path.Combine(songDir, "rbarrangement.json")))
             {
                 JsonSerializer.Serialize(stream, songStructure, SerializationUtil.CondensedSerializerOptions);
             }
@@ -813,7 +840,10 @@ namespace RockBandConverter
 
         public void ConvertAll(string path)
         {
-
+            foreach (string folder in Directory.GetDirectories(path))
+            {
+                ConvertSong(folder);
+            }
         }
     }
 }
