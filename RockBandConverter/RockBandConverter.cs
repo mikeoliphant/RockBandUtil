@@ -101,6 +101,8 @@ namespace RockBandConverter
 
         public void ConvertSong(string songFolder)
         {
+            string relativeSongFolder = Path.GetRelativePath(destPath, songFolder);
+
             RockBandIni ini = LoadSongIni(Path.Combine(songFolder, "song.ini"));
 
             SongData songData = new SongData()
@@ -262,7 +264,7 @@ namespace RockBandConverter
                                 {
                                     InstrumentName = "drums",
                                     InstrumentType = ESongInstrumentType.Drums,
-                                    SongAudio = songFolder,
+                                    SongAudio = relativeSongFolder,
                                     ArrangementName = "rbarrangement"
                                 });
                             }
@@ -278,7 +280,7 @@ namespace RockBandConverter
                                 {
                                     InstrumentName = "rbvocals",
                                     InstrumentType = ESongInstrumentType.Vocals,
-                                    SongAudio = songFolder,
+                                    SongAudio = relativeSongFolder,
                                     ArrangementName = "rbarrangement"
                                 });
                             }
@@ -299,7 +301,7 @@ namespace RockBandConverter
                                 {
                                     InstrumentName = "keys",
                                     InstrumentType = ESongInstrumentType.Keys,
-                                    SongAudio = songFolder,
+                                    SongAudio = relativeSongFolder,
                                     ArrangementName = "rbarrangement"
                                 });
                             }
