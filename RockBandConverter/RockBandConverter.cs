@@ -24,6 +24,8 @@ namespace RockBandConverter
 
     public class RockBandConverter
     {
+        public Func<string, bool> UpdateAction { get; set; }
+
         string destPath;
         bool convertAudio;
 
@@ -99,7 +101,7 @@ namespace RockBandConverter
             return null;
         }
 
-        public void ConvertSong(string songFolder)
+        public bool ConvertSong(string songFolder)
         {
             string relativeSongFolder = Path.GetRelativePath(destPath, songFolder);
 
@@ -126,6 +128,14 @@ namespace RockBandConverter
             if (!Directory.Exists(songDir))
             {
                 Directory.CreateDirectory(songDir);
+            }
+
+            if (UpdateAction != null)
+            {
+                if (!UpdateAction(songData.ArtistName + " - " + songData.SongName))
+                {
+                    return false;
+                }
             }
 
             string songPath = Path.Combine(songDir, "song.json");
@@ -838,14 +848,32 @@ namespace RockBandConverter
             if (convertAudio)
             {
             }
+
+            return true;
         }
 
-        public void ConvertAll(string path)
+        public bool ConvertAll(string path)
         {
+            if (File.Exists(Path.Combine(path, "song.ini")))
+            {
+                try
+                {
+                    if (!ConvertSong(path))
+                        return false;
+                }
+                catch (Exception ex)
+                {
+
+                }
+            }
+
             foreach (string folder in Directory.GetDirectories(path))
             {
-                ConvertSong(folder);
+                if (!ConvertAll(folder))
+                    return false;
             }
+
+            return true;
         }
     }
 }
