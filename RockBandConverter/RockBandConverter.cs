@@ -1,7 +1,7 @@
 ﻿using SongFormat;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using NAudio.Midi;
+using Midi;
 
 namespace RockBandConverter
 {
