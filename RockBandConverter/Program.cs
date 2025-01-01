@@ -7,7 +7,7 @@ namespace RockBandConverter
     {
         public static void Main(string[] args)
         {
-            RockBandConverter converter = new RockBandConverter(@"C:\Share\JamSongs", convertAudio: true);
+            var converter = new RockBandUtil.RockBandConverter(@"C:\Share\JamSongs", convertAudio: true);
 
             converter.ConvertAll(@"C:\Share\Drums\RockBand\RB3_MSL(V1)");
 

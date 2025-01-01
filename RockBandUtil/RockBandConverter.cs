@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Midi;
 
-namespace RockBandConverter
+namespace RockBandUtil
 {
     public class RockBandIni
     {
