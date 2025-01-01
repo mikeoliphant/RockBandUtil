@@ -360,11 +360,15 @@ namespace RockBandConverter
                                     if (lastSection != null)
                                         lastSection.EndTime = time;
 
-                                    songStructure.Sections.Add(new SongSection()
+                                    var section = new SongSection()
                                     {
                                         Name = c.Value,
                                         StartTime = time
-                                    });
+                                    };
+
+                                    songStructure.Sections.Add(section);
+
+                                    lastSection = section;
                                 }
                             }
                             else if (isVocals)
