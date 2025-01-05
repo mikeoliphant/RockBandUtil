@@ -801,7 +801,7 @@ namespace RockBandUtil
                 
                 if (isDrums)
                 {
-                    drumNotes.Notes.Sort((a, b) => ((a.TimeOffset == b.TimeOffset) ? (a.KitPiece.CompareTo(b.KitPiece)) : a.TimeOffset.CompareTo(b.TimeOffset)));
+                    drumNotes.Notes.Sort((a, b) => ((a.TimeOffset == b.TimeOffset) ? (b.KitPiece.CompareTo(a.KitPiece)) : a.TimeOffset.CompareTo(b.TimeOffset)));
 
                     using (FileStream stream = File.Create(Path.Combine(songDir, "drums.json")))
                     {
